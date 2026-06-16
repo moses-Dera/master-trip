@@ -41,26 +41,26 @@ To balance raw search performance with massive developer velocity, we implemente
 
 ```mermaid
 flowchart TD
-    Client[Web Client] --> CDN[Azure Front Door / Static Web Apps]
-    CDN --> NextJS[Next.js 16 UI]
+    Client["Web Client"] --> CDN["Azure Front Door / Static Web Apps"]
+    CDN --> NextJS["Next.js 16 UI"]
     
     %% Core Search Flow
-    NextJS -- "Search Req" --> NestAPI[NestJS Search API (Container Apps)]
-    NestAPI <--> Redis[(Azure Cache for Redis)]
-    NestAPI -- "Fan Out" --> GDS[GDS/Aggregator APIs]
+    NextJS -- "Search Req" --> NestAPI["NestJS Search API (Container Apps)"]
+    NestAPI <--> Redis[("Azure Cache for Redis")]
+    NestAPI -- "Fan Out" --> GDS["GDS/Aggregator APIs"]
     
     %% Booking & Event Flow
-    NextJS -- "Checkout Req" --> Postgres[(Azure DB for PostgreSQL)]
-    NextJS -- "Emit BookingRequested" --> Queue[Azure Service Bus]
+    NextJS -- "Checkout Req" --> Postgres[("Azure DB for PostgreSQL")]
+    NextJS -- "Emit BookingRequested" --> Queue["Azure Service Bus"]
     
     %% Async Workers & Failure Paths
-    Queue --> TicketingWorker[Azure Functions: Ticketing]
-    TicketingWorker --> Stripe[Stripe API]
+    Queue --> TicketingWorker["Azure Functions: Ticketing"]
+    TicketingWorker --> Stripe["Stripe API"]
     TicketingWorker --> GDS
     
     %% Failure Boundary
-    TicketingWorker -- "Max Retries Exceeded" --> DLQ[Dead Letter Queue]
-    DLQ --> RefundWorker[Azure Functions: Auto-Refund]
+    TicketingWorker -- "Max Retries Exceeded" --> DLQ["Dead Letter Queue"]
+    DLQ --> RefundWorker["Azure Functions: Auto-Refund"]
     RefundWorker --> Stripe
 ```
 
@@ -85,25 +85,25 @@ To optimize developer experience on day one without sacrificing future scalabili
 ### Happy Path: Payment & Ticketing Checkout
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Frontend (Next.js)
-    participant API (NestJS)
-    participant Stripe
-    participant DB (PostgreSQL)
-    participant GDS (Airline API)
+    participant User as User
+    participant Frontend as Frontend (Next.js)
+    participant API as API (NestJS)
+    participant Stripe as Stripe
+    participant DB as DB (PostgreSQL)
+    participant GDS as GDS (Airline API)
 
-    User->>Frontend (Next.js): Clicks "Confirm & Pay"
-    Frontend (Next.js)->>API (NestJS): POST /api/checkout
-    API (NestJS)->>GDS (Airline API): Revalidate Fare Price
-    GDS (Airline API)-->>API (NestJS): Price Valid
-    API (NestJS)->>Stripe: Create PaymentIntent
-    Stripe-->>API (NestJS): clientSecret
-    API (NestJS)-->>Frontend (Next.js): clientSecret
-    Frontend (Next.js)->>Stripe: confirmCardPayment()
-    Stripe-->>Frontend (Next.js): Success
-    Frontend (Next.js)->>API (NestJS): POST /api/orders/confirm
-    API (NestJS)->>DB (PostgreSQL): Set status = PENDING_TICKET
-    API (NestJS)-->>Frontend (Next.js): Show Success Screen
+    User->>Frontend: Clicks "Confirm & Pay"
+    Frontend->>API: POST /api/checkout
+    API->>GDS: Revalidate Fare Price
+    GDS-->>API: Price Valid
+    API->>Stripe: Create PaymentIntent
+    Stripe-->>API: clientSecret
+    API-->>Frontend: clientSecret
+    Frontend->>Stripe: confirmCardPayment()
+    Stripe-->>Frontend: Success
+    Frontend->>API: POST /api/orders/confirm
+    API->>DB: Set status = PENDING_TICKET
+    API-->>Frontend: Show Success Screen
 ```
 
 ### Error Path: Ticketing Fails Post-Payment
@@ -111,23 +111,23 @@ This flow demonstrates how we handle the critical failure where a user's card is
 
 ```mermaid
 sequenceDiagram
-    participant Queue (Service Bus)
-    participant Ticketing Worker (Azure Func)
-    participant GDS (Airline API)
-    participant DLQ (Dead Letter Queue)
-    participant Stripe
-    participant DB (PostgreSQL)
+    participant Queue as Queue (Service Bus)
+    participant TicketingWorker as Ticketing Worker (Azure Func)
+    participant GDS as GDS (Airline API)
+    participant DLQ as DLQ (Dead Letter Queue)
+    participant Stripe as Stripe
+    participant DB as DB (PostgreSQL)
 
-    Queue (Service Bus)->>Ticketing Worker (Azure Func): Consume `TicketingRequested`
-    Ticketing Worker (Azure Func)->>GDS (Airline API): POST /issue_ticket (PNR)
-    GDS (Airline API)-->>Ticketing Worker (Azure Func): 500 Internal Error / Seat Unavailable
-    Ticketing Worker (Azure Func)->>Queue (Service Bus): Retry (Exponential Backoff)
-    Note over Ticketing Worker (Azure Func), Queue (Service Bus): After 3 failed retries...
-    Ticketing Worker (Azure Func)->>DLQ (Dead Letter Queue): Enqueue `TicketingFailed`
-    DLQ (Dead Letter Queue)->>Ticketing Worker (Azure Func): Trigger Auto-Refund Handler
-    Ticketing Worker (Azure Func)->>Stripe: POST /refunds
-    Stripe-->>Ticketing Worker (Azure Func): Success
-    Ticketing Worker (Azure Func)->>DB (PostgreSQL): Set status = REFUNDED
+    Queue->>TicketingWorker: Consume `TicketingRequested`
+    TicketingWorker->>GDS: POST /issue_ticket (PNR)
+    GDS-->>TicketingWorker: 500 Internal Error / Seat Unavailable
+    TicketingWorker->>Queue: Retry (Exponential Backoff)
+    Note over TicketingWorker, Queue: After 3 failed retries...
+    TicketingWorker->>DLQ: Enqueue `TicketingFailed`
+    DLQ->>TicketingWorker: Trigger Auto-Refund Handler
+    TicketingWorker->>Stripe: POST /refunds
+    Stripe-->>TicketingWorker: Success
+    TicketingWorker->>DB: Set status = REFUNDED
 ```
 
 ---
