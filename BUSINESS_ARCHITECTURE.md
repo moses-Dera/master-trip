@@ -43,6 +43,12 @@ The platform is designed to handle the complex operations required by enterprise
 *   **Strict Environment Parity:** The architecture enforces strict separation of API keys (e.g., `duffel_test_` vs live tokens) injected via Vercel environment variables. This enables our staging environment and QStash workers to simulate end-to-end ticketing, refunds, and KYC verification flows without touching real money.
 *   **Automated Post-Booking Management:** If an airline alters a flight time, the GDS webhook pushes the change to our oRPC backend. Our Mastra AI Agent intercepts the event, reads the `Order` history, and automatically emails the user their updated itinerary, eliminating manual dashboard management.
 
+### 2.2 Frictionless B2C Checkout & "Shadow Accounts"
+To maximize conversion rates, the platform does not force users to create a password before purchasing. Instead, it utilizes a frictionless background flow:
+1. **Guest Checkout:** The user enters their email and credit card to buy a flight.
+2. **Shadow Account Creation:** Upon payment, the backend checks Supabase. If the email is new, it silently provisions a `User` record in the background and attaches the new `Trip` to it, ensuring database relational integrity is preserved.
+3. **Magic Link Auth:** When the user receives their itinerary email via Resend, they are provided a WorkOS Magic Link. Clicking the link authenticates them instantly into the Next.js dashboard as a registered user, completely bypassing the need for passwords.
+
 ---
 
 ## 3. Enterprise Group Bookings (The "Invite Link" Design)
@@ -76,3 +82,23 @@ To support Schools, Corporations, and massive Excursions without causing adminis
 Because our backend uses the **Adapter Pattern** (an array of multiple API providers searching simultaneously), we automatically solve the two biggest B2B challenges:
 1. **Unlocking Corporate Discounts:** Instead of relying on a single API, our search engine pings multiple providers. If Amadeus sees a 50-passenger order, it returns a massive "Group Rate Discount" that other B2C providers might miss.
 2. **Splitting Massive Inventory:** If a corporate retreat needs 50 hotel rooms, but Expedia only has 25 left, our system doesn't fail. The aggregator automatically buys 25 rooms from Expedia and 25 from Hotelbeds, fulfilling the massive order seamlessly.
+
+---
+
+## 4. Internal Operations & The Markup Engine
+
+To manage this complex platform securely without bloating the public website, Master-Trip utilizes an internal **Role-Based Admin Dashboard** for staff operations.
+
+### 4.1 The Dynamic Markup Engine (Pricing)
+The public Next.js frontend never determines pricing, as this exposes the platform to client-side tampering. Instead, the oRPC backend applies dynamic markups (e.g., adding 10% to the Duffel wholesale cost) *before* the user sees the final cart price. Operations Managers use the Admin Dashboard to dynamically adjust these margins based on seasonal demand without redeploying any code.
+
+### 4.2 Role-Based Access Control (RBAC)
+To protect customer data and financial integrity, internal dashboard access is strictly governed by Supabase RLS and WorkOS roles:
+*   **Support Agents:** Can monitor live AI chats, trigger manual chat overrides, and issue partial refunds. They cannot see raw Virtual Credit Card numbers (only the last 4 digits).
+*   **Operations / Finance:** Can update profit margin rules and view raw Stripe payout reconciliations against VCC spend.
+*   **Engineers:** Have exclusive access to monitor the Dead Letter Queue (DLQ) and manually trigger retries for failed API fulfillments.
+
+### 4.3 Automated Marketing & Price Alerts
+Because the platform automatically captures emails during the frictionless Guest Checkout flow, the user database naturally scales into a powerful marketing engine. 
+*   **Behavioral Targeting:** Using **PostHog**, the system tracks users who searched for specific flights (e.g., "Paris") but abandoned their cart.
+*   **Automated Deal Blasts:** A weekly **QStash Cron Job** fetches the latest discounted inventory from the Duffel API. If flights to Paris drop by 30%, the backend triggers a highly targeted marketing email via **Resend**, pushing the discounted flight exclusively to the users who abandoned those carts, drastically increasing long-term conversion rates.
