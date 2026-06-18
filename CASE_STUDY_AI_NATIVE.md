@@ -92,7 +92,7 @@ The backend is architected as an oRPC **Modular Monolith** to isolate the distin
 3.  **Payment Module:** Integrates with Stripe for capturing funds for the *entire* trip at once.
 4.  **Async Fulfillment Module:** Listens to QStash. It loops through the `TripItems` and executes the brittle API calls to the individual providers asynchronously.
 5.  **User & Traveler Module:** Manages the person paying vs. the `Travelers` (passengers/guests) taking the trip.
-6.  **AI Support Module:** Mastra agent workflows that authenticate as the user to query the *entire* Trip itinerary and resolve complex customer support tickets autonomously.
+6.  **AI Support Module:** Mastra agent workflows that authenticate as the user to query the *entire* Trip itinerary via Prisma. Additionally, it utilizes **RAG (Retrieval-Augmented Generation)** via Supabase `pgvector` to retrieve strict airline policies and visa rules, preventing legal hallucinations.
 
 ### Scalability Design: The Adapter Pattern
 To ensure the platform could launch rapidly on a 1-month timeline but scale to infinite API providers later, the backend utilizes the **Adapter Software Pattern**:
@@ -262,6 +262,7 @@ sequenceDiagram
 | **Partial Fulfillment Failures** | A user pays $2,000 for a flight + hotel. The flight succeeds, but the hotel fails. | Implemented QStash with a **Dead Letter Queue (DLQ)**. The system flags the `Trip` as `PARTIAL_FAIL` and an AI agent proactively emails the user with alternative hotel options or initiates a partial refund. | Requires robust DLQ monitoring and complex partial-refund logic. |
 | **AI Data Isolation** | The AI agent needs to read the entire itinerary to answer complex routing questions without leaking other users' data. | **Prisma Context Isolation:** The Mastra agent inherits the specific user's ID. Prisma middleware forcefully appends `where: { userId }` to all agent queries. The DB layer remains completely vendor-agnostic. | Requires securely passing user context through QStash payloads to the worker. |
 | **AI Human Handoff (VIP & Urgency)** | The AI must know when to step aside—not just for frustrated users, but for urgent crises, confidential requests, or high-profile (VIP) corporate clients. | **Context-Aware Escalation:** The Mastra AI is instructed to use the `EscalateToHuman` tool dynamically. If it detects urgency ("stuck at border"), secrecy, or reads a `VIP_TIER` flag on the user's profile, it immediately updates the DB status to `NEEDS_HUMAN_URGENT`. Supabase Realtime bypasses the AI and instantly pings the Tier-2 human support team to take over. | Requires building a dedicated real-time Admin UI to monitor live AI chat logs and VIP queues. |
+| **Legal & Policy Hallucinations** | Travel involves strict legalities (Visa rules, Airline baggage limits). If the AI hallucinates a policy, the company faces massive liability or chargebacks. | **Supabase pgvector (RAG):** Instead of letting the LLM guess, we loaded all airline Terms of Service into Supabase using `pgvector`. When a user asks about baggage, the Mastra AI performs a vector similarity search to retrieve and cite the exact legal paragraph. | Requires keeping the vector database updated as airlines change their policies. |
 
 ---
 
