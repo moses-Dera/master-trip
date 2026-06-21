@@ -17,7 +17,7 @@ Instead, our strategy focuses on deep partnerships with tested, trusted, IATA-ce
 | **Flights** | **247 Travels API** | 247 Travels is an IATA-certified consolidator. They hold direct airline inventory, and we have a direct relationship with their leadership and customer service teams. This guarantees we can support our passengers during cancellations, reissues, or emergencies. |
 | **Hotels** | **Booking.com API** | Highly reliable compared to other consolidators. Guarantees that when a passenger arrives at the hotel, the reservation and payment are actually in the hotel's system. |
 | **Admissions Abroad** | **Internal Processing** | A core high-margin service we offer alongside flight booking. |
-| **Tour Packages** | **Pending Review** | Evaluating Viator / GetYourGuide for international tours, but prioritizing local Nigerian tours first to solidify our regional footprint. |
+| **Tour Packages** | **Local Nigerian Tours** | Prioritizing local Nigerian tours first to solidify our regional footprint. |
 
 *(Note: Corporate Travels, Travel Insurance, and Car Rentals are deprioritized for the MVP to maintain a lean, focused launch).*
 

@@ -32,7 +32,7 @@ To balance raw search performance with massive developer velocity, we implemente
 | :--- | :--- | :--- | :--- |
 | **Frontend** | Next.js 16 (App Router) | SSR for SEO on route landing pages; Vercel edge caching for static assets. | React SPA (poor SEO for flight routes); Remix (less ecosystem support for complex booking forms). |
 | **Search Engine & API** | NestJS (Azure Container Apps) | NestJS provides enterprise-grade structure. Running it in "always-on" containers maintains persistent connection pools to GDS APIs, avoiding serverless cold starts. | Go (high performance, but breaks the unified TypeScript monorepo experience, slowing development). |
-| **Async Workers** | Azure Functions (Serverless) | Perfect for bursty webhook processing (ticketing confirmation, Stripe events) and scales to zero to save costs. | Dedicated Worker VMs (unnecessary idle costs for async tasks). |
+| **Async Workers** | Azure Functions (Serverless) | Perfect for bursty webhook processing (ticketing confirmation, Paystack events) and scales to zero to save costs. | Dedicated Worker VMs (unnecessary idle costs for async tasks). |
 | **Database** | Azure Database for PostgreSQL | Strict ACID guarantees are mandatory for payment flows and order states. | MongoDB (lack of robust multi-document transaction support at the time of architectural design). |
 | **Cache** | Azure Cache for Redis | High-speed, in-memory caching for flight search results to prevent breaching GDS rate limits. | Memcached (lacks the advanced data structures like sorted sets needed for price sorting). |
 | **Event Bus** | Azure Service Bus | Decouples the fast checkout process from the slow, error-prone airline ticketing process. Provides native Dead Letter Queues (DLQ). | Direct HTTP calls (brittle; a failed ticketing call would require manual intervention). |
@@ -55,7 +55,7 @@ flowchart TD
     
     %% Async Workers & Failure Paths
     Queue --> TicketingWorker["Azure Functions: Ticketing"]
-    TicketingWorker --> Stripe["Stripe API"]
+    TicketingWorker --> Stripe["Paystack API"]
     TicketingWorker --> GDS
     
     %% Failure Boundary
@@ -73,7 +73,7 @@ To optimize developer experience on day one without sacrificing future scalabili
 1.  **Search & Aggregation Module:** Fans out requests to multiple GDS/airline APIs simultaneously, normalizes the massive XML/JSON responses into a clean format, and caches them in Redis.
 2.  **Pricing & Markup Module:** Applies dynamic business rules (e.g., adding a 5% markup to specific routes) during the search and checkout phases.
 3.  **Booking Module:** The core transactional engine managing the PNR (Passenger Name Record) and the strict booking state machine (`DRAFT` -> `PENDING_TICKET` -> `CONFIRMED`).
-4.  **Payment Module:** Integrates with Stripe for capturing funds, issuing holds, and initiating automated refunds via Idempotency keys.
+4.  **Payment Module:** Integrates with Paystack for capturing funds, issuing holds, and initiating automated refunds via Idempotency keys.
 5.  **Fulfillment & Ticketing Module (Async Worker):** Listens to Azure Service Bus. Crucial for isolating the slow, error-prone airline ticketing API calls away from the fast user checkout flow.
 6.  **User & Profile Module:** Securely manages encrypted passenger details (passports, Known Traveler Numbers) in PostgreSQL.
 7.  **Notification Module (Async Worker):** Triggers emails (SendGrid) and SMS (Twilio) for e-tickets, delays, and gate changes.
@@ -88,7 +88,7 @@ sequenceDiagram
     participant User as User
     participant Frontend as Frontend (Next.js)
     participant API as API (NestJS)
-    participant Stripe as Stripe
+    participant Stripe as Paystack
     participant DB as DB (PostgreSQL)
     participant GDS as GDS (Airline API)
 
@@ -96,10 +96,10 @@ sequenceDiagram
     Frontend->>API: POST /api/checkout
     API->>GDS: Revalidate Fare Price
     GDS-->>API: Price Valid
-    API->>Stripe: Create PaymentIntent
-    Stripe-->>API: clientSecret
-    API-->>Frontend: clientSecret
-    Frontend->>Stripe: confirmCardPayment()
+    API->>Stripe: Initialize Transaction
+    Stripe-->>API: authorization_url
+    API-->>Frontend: authorization_url
+    Frontend->>Stripe: processPayment()
     Stripe-->>Frontend: Success
     Frontend->>API: POST /api/orders/confirm
     API->>DB: Set status = PENDING_TICKET
@@ -115,7 +115,7 @@ sequenceDiagram
     participant TicketingWorker as Ticketing Worker (Azure Func)
     participant GDS as GDS (Airline API)
     participant DLQ as DLQ (Dead Letter Queue)
-    participant Stripe as Stripe
+    participant Stripe as Paystack
     participant DB as DB (PostgreSQL)
 
     Queue->>TicketingWorker: Consume `TicketingRequested`
@@ -145,7 +145,7 @@ GET  /api/bookings/:id             -- Polling endpoint for ticket status
 POST /api/bookings/:id/revalidate  -- Checks if price changed before payment
 
 # Webhooks (No Auth, Signature Verified via Azure Functions)
-POST /api/webhooks/stripe          -- Handles async payment successes
+POST /api/webhooks/paystack          -- Handles async payment successes
 POST /api/webhooks/gds             -- Handles airline delays/schedule changes
 ```
 
@@ -189,7 +189,7 @@ erDiagram
     Payment {
         string id PK
         string booking_id FK
-        string stripe_intent_id
+        string paystack_reference_id
         decimal amount
         string status "AUTHORIZED, CAPTURED, FAILED"
     }
@@ -218,8 +218,8 @@ erDiagram
 | Challenge | Why It Was Hard | Solution | Trade-off |
 | :--- | :--- | :--- | :--- |
 | **GDS Response Latency** | Legacy airline APIs take 3-6 seconds to return search results, leading to terrible UX and UI timeouts. | Implemented Azure Cache for Redis for frequent routes and a highly-concurrent NestJS API to fan-out requests. | **Slight Price Staleness:** A user might click a cached $400 flight, only to find out during the revalidation step that it is now $420. |
-| **Price Volatility at Checkout** | Between the time a user selects a flight and types in their credit card, the airline might change the price or sell the last seat. | **Optimistic Locking & Revalidation:** We force a server-side re-validation API call to the GDS the *millisecond* before the Stripe payment is captured. | Added 1.5 seconds of friction to the final checkout spinner. |
-| **Silent Ticketing Failures** | The GDS would occasionally timeout during ticket issuance. The user's card was charged, but no ticket was generated. | Implemented an Azure Service Bus with a **Dead Letter Queue (DLQ)**. Failed tickets trigger an automated Stripe refund worker via Azure Functions. | Requires active monitoring of the DLQ depth via Datadog to ensure refunds aren't backing up. |
+| **Price Volatility at Checkout** | Between the time a user selects a flight and types in their credit card, the airline might change the price or sell the last seat. | **Optimistic Locking & Revalidation:** We force a server-side re-validation API call to the GDS the *millisecond* before the Paystack payment is captured. | Added 1.5 seconds of friction to the final checkout spinner. |
+| **Silent Ticketing Failures** | The GDS would occasionally timeout during ticket issuance. The user's card was charged, but no ticket was generated. | Implemented an Azure Service Bus with a **Dead Letter Queue (DLQ)**. Failed tickets trigger an automated Paystack refund worker via Azure Functions. | Requires active monitoring of the DLQ depth via Datadog to ensure refunds aren't backing up. |
 
 ---
 

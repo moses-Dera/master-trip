@@ -17,7 +17,7 @@
 ### Technical Goals
 * **Unified Inventory Architecture:** Design a polymorphic data model capable of normalizing entirely different API schemas (Flight PNRs vs. Hotel room sizes) under one `Trip` entity.
 * **Search Performance:** Achieve p95 search response times under 500ms despite upstream aggregator latency averaging 2-5s.
-* **Reliability:** Ensure strict ACID transactions so that a single Stripe payment seamlessly triggers asynchronous fulfillment across multiple vertical providers (Airlines, Hotels, Tour companies).
+* **Reliability:** Ensure strict ACID transactions so that a single Paystack payment seamlessly triggers asynchronous fulfillment across multiple vertical providers (Airlines, Hotels, Tour companies).
 * **AI Data Isolation:** Guarantee that an AI agent cannot physically read data belonging to other users, preventing data leaks via prompt injection.
 
 ### Non-Goals
@@ -40,14 +40,14 @@ To balance raw search performance with the immense complexity of multi-vertical 
 
 ### External API Integrations
 
-To function as a global meta-aggregator, the platform relies heavily on robust third-party APIs. I evaluated and selected these providers based on developer experience (DX) and payload reliability:
+To function as a focused travel aggregator (using a "Local to Global" strategy for the MVP), the platform relies heavily on deep partnerships with tested, trusted third-party APIs rather than a brittle meta-aggregator model. I evaluated and selected these providers based on reliability and operational relationships:
 
 | Vertical / Service | Provider Chosen | Why We Use Them |
 | :--- | :--- | :--- |
-| **Flights (GDS)** | **[Duffel API](https://docs.duffel.com/) + [Amadeus](https://developers.amadeus.com/) + [Travelfusion](https://www.travelfusion.com/)** | A multi-GDS strategy. Duffel handles modern NDC airlines via clean REST JSON, Amadeus covers legacy global routes, and Travelfusion captures Low-Cost Carriers (LCCs) like Ryanair. |
-| **Hotels & Lodging** | **[Expedia Partner Solutions (EPS)](https://developer.expediagroup.com/)** | Grants immediate access to millions of properties globally with deep wholesale discounts for B2B partners. |
-| **Tours & Activities** | **[Viator API](https://docs.viator.com/)** | The industry standard aggregator for instantly bookable excursions and local private guides. |
-| **Payments / VCC** | **[Stripe (Issuing)](https://stripe.com/docs/issuing)** | Acts as our Merchant of Record. We use Stripe Issuing to generate single-use Virtual Credit Cards (VCCs) to pay the airlines/hotels behind the scenes while securely keeping our profit markup. |
+| **Flights** | **247 Travels API** | An IATA-certified consolidator with direct airline inventory. Ensures we have a direct operational relationship to support passengers during cancellations or emergencies. |
+| **Hotels & Lodging** | **Booking.com API** | Highly reliable provider. Guarantees that when a passenger arrives at the hotel, the reservation and payment are actually in the hotel's system. |
+| **Tours & Activities** | **Local Nigerian Tours** | Prioritizing local tours first to solidify our regional footprint. |
+| **Payments / VCC** | **[Flutterwave Issuing / Paystack](https://developer.flutterwave.com/)** | Acts as our Merchant of Record. We use Flutterwave to generate Virtual Credit Cards (VCCs) for B2B API payments, while using Paystack to capture checkout funds. |
 | **AI LLM Routing** | **[OpenRouter](https://openrouter.ai/docs)** | Provides a unified API to swap between GPT-4o, Claude 3.5, and open-source models instantly, preventing AI vendor lock-in and optimizing token costs. |
 
 ### Architecture Diagram (Unified Checkout & AI Flow)
@@ -68,7 +68,7 @@ flowchart TD
     
     %% Async Fulfillment
     Queue --> FulfillmentWorker["Mastra Fulfillment Workers"]
-    FulfillmentWorker --> Stripe["Stripe API"]
+    FulfillmentWorker --> Stripe["Paystack / Flutterwave API"]
     FulfillmentWorker -- "Book Flight" --> FlightAPI["Airlines"]
     FulfillmentWorker -- "Book Hotel" --> HotelAPI["Hotels"]
     
@@ -87,29 +87,29 @@ flowchart TD
 
 The backend is architected as an oRPC **Modular Monolith** to isolate the distinct business logic of each vertical, while uniting them at checkout.
 
-1.  **Vertical Search Modules (Flights, Hotels, Tours, Cars):** Separate bounded contexts that normalize the diverse XML/JSON responses from distinct APIs (e.g., Amadeus vs. Viator) and cache them in Upstash Redis.
-2.  **Unified Cart & Booking Module:** The core transactional engine managing the master `Trip` in PostgreSQL via Prisma. Because the cart uses polymorphic `TripItems`, users can flexibly check out with *just* a flight, *just* a tour, or a mixed bundle of all services in a single Stripe payment.
-3.  **Payment Module:** Integrates with Stripe for capturing funds for the *entire* trip at once.
+1.  **Vertical Search Modules (Flights, Hotels, Tours, Cars):** Separate bounded contexts that normalize the diverse XML/JSON responses from distinct APIs and cache them in Upstash Redis.
+2.  **Unified Cart & Booking Module:** The core transactional engine managing the master `Trip` in PostgreSQL via Prisma. Because the cart uses polymorphic `TripItems`, users can flexibly check out with *just* a flight, *just* a tour, or a mixed bundle of all services in a single Paystack payment.
+3.  **Payment Module:** Integrates with Paystack for capturing funds for the *entire* trip at once.
 4.  **Async Fulfillment Module:** Listens to QStash. It loops through the `TripItems` and executes the brittle API calls to the individual providers asynchronously.
 5.  **User & Traveler Module:** Manages the person paying vs. the `Travelers` (passengers/guests) taking the trip.
 6.  **AI Support Module:** Mastra agent workflows that authenticate as the user to query the *entire* Trip itinerary via Prisma. Additionally, it utilizes **RAG (Retrieval-Augmented Generation)** via Supabase `pgvector` to retrieve strict airline policies and visa rules, preventing legal hallucinations.
 
 ### Scalability Design: The Adapter Pattern
 To ensure the platform could launch rapidly on a 1-month timeline but scale to infinite API providers later, the backend utilizes the **Adapter Software Pattern**:
-*   **The Problem:** Vendor lock-in and brittle code. Hardcoding a specific API (like Duffel) deeply into the core business logic means if Duffel goes down, the whole app crashes. It also prevents adding secondary providers to find cheaper wholesale prices.
-*   **The Solution:** We defined strict, internal TypeScript interfaces for every vertical (`IFlightProvider`, `IHotelProvider`, `ICarProvider`, `ITourProvider`). We launched V1 rapidly using a single API (Duffel) by writing a `DuffelFlightAdapter`, `DuffelHotelAdapter`, `DuffelCarAdapter`, and `DuffelTourAdapter`.
-*   **Why It Wins:** When the business is ready to add Amadeus or Expedia next year, a developer simply writes an `AmadeusAdapter`. The oRPC Aggregator engine automatically iterates through the array of active providers, fires parallel requests to all of them, ignores any that crash, and returns the absolute cheapest normalized result to the Next.js frontend—without altering a single line of UI code.
+*   **The Problem:** Vendor lock-in and brittle code. Hardcoding a specific API (like 247 Travels) deeply into the core business logic means if that provider goes down, the whole app crashes. It also prevents adding secondary providers to find cheaper wholesale prices later.
+*   **The Solution:** We defined strict, internal TypeScript interfaces for every vertical (`IFlightProvider`, `IHotelProvider`, `ICarProvider`, `ITourProvider`). We launched V1 rapidly using focused partnerships by writing a `Travels247FlightAdapter`, `BookingDotComHotelAdapter`, and `LocalTourAdapter`.
+*   **Why It Wins:** When the business is ready to expand globally with new providers next year, a developer simply writes a `NewProviderAdapter`. The oRPC Aggregator engine automatically iterates through the array of active providers, fires parallel requests to all of them, ignores any that crash, and returns the absolute cheapest normalized result to the Next.js frontend—without altering a single line of UI code.
 
 **Implementation: The Provider Registry**
 To "plug it all in" cleanly, the backend uses a Factory/Registry array. The oRPC router doesn't care which APIs exist; it simply loops over whatever is plugged into the array.
 
 ```typescript
 // 1. Initialize Adapters
-const duffel = new DuffelFlightAdapter(process.env.DUFFEL_KEY);
-const amadeus = new AmadeusFlightAdapter(process.env.AMADEUS_KEY);
+const travels247 = new Travels247FlightAdapter(process.env.TRAVELS247_KEY);
+const futureProvider = new FutureGlobalFlightAdapter(process.env.FUTURE_KEY); // Future global expansion
 
 // 2. The Plug-and-Play Registry
-const flightProviders = [duffel, amadeus]; 
+const flightProviders = [travels247, futureProvider]; 
 
 // 3. The oRPC Route (Self-Iterating)
 const results = await Promise.allSettled(
@@ -131,13 +131,13 @@ const sortedApis = sortCheapestFirst(await Promise.allSettled(hotelProviders.map
 for (const api of sortedApis) {
     if (neededRooms === 0) break;
     
-    // e.g., Expedia only has 25 rooms left. Grab them all.
+    // e.g., Booking.com only has 25 rooms left. Grab them all.
     const take = Math.min(api.availableRooms, neededRooms);
     finalOrder.push({ provider: api.name, rooms: take, price: api.price });
     neededRooms -= take; 
 }
 ```
-*This logic automatically merges 25 rooms from Expedia and 25 rooms from Hotelbeds, fulfilling massive corporate orders that a single-provider architecture would immediately reject as "Sold Out."*
+*This logic automatically merges 25 rooms from Booking.com and 25 rooms from a secondary provider (when added), fulfilling massive corporate orders that a single-provider architecture would immediately reject as "Sold Out."*
 
 ### Supporting Services (Enterprise Tooling)
 To achieve true B2B readiness without bloating the core architecture, we delegated non-core responsibilities to specialized SaaS tools:
@@ -209,7 +209,7 @@ erDiagram
     Payment {
         uuid id PK
         uuid trip_id FK
-        string stripe_intent_id
+        string paystack_reference_id
         decimal amount
     }
 
@@ -273,6 +273,7 @@ Because we avoided "always-on" legacy infrastructure (e.g., Azure managed VMs), 
 ### 1. MVP Stage (0 → 1k users)
 Perfect for a 3-person engineering team launching the platform:
 
+*   **247 Travels API Access:** ₦75,000 (Approx. $50 upfront/recurring, the primary B2B consolidator connection)
 *   **Vercel Pro:** $60/mo (3 developer seats)
 *   **Supabase Pro:** $25/mo (Core DB + Realtime)
 *   **Fly.io (Mastra):** ~$15/mo (AI Workers)
@@ -280,7 +281,7 @@ Perfect for a 3-person engineering team launching the platform:
 *   **OpenRouter (LLMs):** ~$40/mo (The primary variable cost)
 *   **Supporting (WorkOS/PostHog/Sentry):** $0 (Free tiers for MVP traffic)
 
-** Estimated Total:** ~$160 / month
+** Estimated Total:** ~$160 / month + ₦75,000 (24/7) API Setup
 
 ---
 
