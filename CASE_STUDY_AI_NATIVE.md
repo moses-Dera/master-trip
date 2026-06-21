@@ -271,30 +271,30 @@ sequenceDiagram
 Because we avoided "always-on" legacy infrastructure (e.g., Azure managed VMs), the operational cost of this platform is fundamentally driven by **usage**, specifically LLM tokens. 
 
 ### 1. MVP Stage (0 → 1k users)
-Perfect for a 3-person engineering team launching the platform:
+Perfect for a lean engineering team launching the platform:
 
 *   **247 Travels API Access:** ₦75,000 (Approx. $50 upfront/recurring, the primary B2B consolidator connection)
-*   **Vercel Pro:** $60/mo (3 developer seats)
+*   **Vercel Pro:** $20/mo (1 developer seat)
 *   **Supabase Pro:** $25/mo (Core DB + Realtime)
 *   **Fly.io (Mastra):** ~$15/mo (AI Workers)
 *   **Upstash & QStash:** ~$20/mo (Cache + Queues)
 *   **OpenRouter (LLMs):** ~$40/mo (The primary variable cost)
 *   **Supporting (WorkOS/PostHog/Sentry):** $0 (Free tiers for MVP traffic)
 
-** Estimated Total:** ~$160 / month + ₦75,000 (24/7) API Setup
+** Estimated Total:** ~$120 / month + ₦75,000 (24/7) API Setup
 
 ---
 
 ### 2. Scale Stage (10k+ users)
 As B2B traction increases, infrastructure costs scale predictably. **The single largest cost driver is LLM token usage (OpenRouter)**, not servers.
 
-*   **Vercel Pro:** $60/mo (Fixed cost for 3 seats, does not increase with traffic).
+*   **Vercel Pro:** $20/mo (Fixed cost for 1 seat, does not increase with traffic).
 *   **Supabase Pro:** $50 - $150/mo (Upgrading to dedicated Postgres read-replicas).
 *   **Fly.io (Mastra):** $20 - $80/mo (Scaling up worker VMs).
 *   **Upstash & QStash:** $40 - $150/mo (High volume fulfillment processing).
 *   **OpenRouter (LLMs):** $200 - $1,500/mo (Surges as AI processes thousands of massive flight JSON payloads).
 *   **Supporting (WorkOS/PostHog/Resend/Sentry):** $30 - $100/mo (Moving off free tiers for massive analytics, error logging, and email volume).
 
-** Estimated Total:** $400 - $2,040+ / month
+** Estimated Total:** $360 - $2,000+ / month
 
 **Final Outcome:** We successfully delivered a globally scalable, AI-native multi-vertical travel platform that reduces idle infrastructure costs by 70% compared to traditional cloud architectures, while maintaining elite-level Enterprise B2B capabilities.
