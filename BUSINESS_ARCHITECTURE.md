@@ -48,13 +48,13 @@ To maximize conversion rates, the platform does not force users to create a pass
 
 Unlike static ecommerce, the travel industry relies on Global Distribution Systems (GDS) where inventory is highly volatile. 
 
-### Why We Reject "Holding Deposits"
-Master-Trip does not offer "10% holding deposits" for group flight bookings. Airlines control the seats, and reserving 50 seats without immediate full payment results in ADMs (Agency Debit Memos) and massive financial penalties for Master-Trip. 
+### Why We Reject "Holding Deposits" (For Both Individuals and Groups)
+Master-Trip does not offer "10% holding deposits" or allow users to lock in prices without full payment, whether they are booking a single ticket or 50 seats for a group. Airline inventory is highly volatile, and reserving seats without immediate full payment exposes Master-Trip to ADMs (Agency Debit Memos) and massive financial penalties.
 
-If corporate clients or schools require group bookings, the flow is strictly governed by the airline's real-time pricing:
-1. Group inquiries are handled as real-time quotes.
-2. Users/Corporates must pay the full amount at the current GDS rate to secure the booking.
-3. We do not manually float or hold seats at our own risk.
+The flow for all bookings (individuals and enterprise clients) is strictly governed by the airline's real-time pricing:
+1. All searches and inquiries are treated as real-time quotes.
+2. Users must pay the full amount at the current GDS rate to secure the booking before the airline's strict time limit expires.
+3. We absolutely do not manually float, guarantee prices, or hold seats at our own financial risk.
 
 ---
 
